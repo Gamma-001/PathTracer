@@ -114,7 +114,7 @@ vec3 LightBounce(ray r, std::vector <Sphere> &spheres, HitRecord hitRec, vec3 ra
 int main() {
 	const float aspectRatio = 16.0f / 9.0f;
 
-	const uint16_t imageWidth = 500;
+	const uint16_t imageWidth = 1920;
 	const uint16_t imageHeight = imageWidth / aspectRatio;
 
 	Camera viewCam(vec3(0.0f, 0.0f, 2.0f), 2.0f, aspectRatio * 2.0f, 2.0f);
