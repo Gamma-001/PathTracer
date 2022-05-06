@@ -17,6 +17,8 @@ add_executable (RayTracing "src/main.cpp")
 # specify target libraries
 target_link_libraries (
 	RayTracing PUBLIC
+	Material
+	Util
 	Sphere
 	Vec3
 )

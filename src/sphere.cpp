@@ -18,17 +18,21 @@ bool Sphere::hit(const ray &r, float tMin, float tMax, HitRecord &rc) {
 	float r_a = (-b - sq_d) / (2.0f * a);
 	float r_b = (-b + sq_d) / (2.0f * a);
 
-	root = std::min(r_a, r_b);
-	// return the the point closer to the ray
-
-	if (root < tMin || root > tMax) return false;
-
+	if (r_a < r_b && r_a > tMin && r_a < tMax) {
+		root = r_a;
+	}
+	else if(r_b > tMin && r_b < tMax) {
+		root = r_b;
+	}
+	else return false;
+	
 	// if (vec3::dot(rc.norm, r.direction) < 0) return false;
 
 	rc.t = root;
 	rc.position = r.ray_at(root);
 	rc.norm = (rc.position - center);
 	rc.norm = rc.norm.normal();
+	rc.object = static_cast <MeshObject*> (this);
 
 	return true;
 }

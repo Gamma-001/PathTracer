@@ -61,6 +61,34 @@ vec3 vec3::multiply(const vec3 &a, const vec3 &b) {
 	);
 }
 
+vec3 vec3::reflect(const vec3 &a, const vec3 &n) {
+	return a - 2.0f * dot(a, n) * n;
+}
+
+vec3 vec3::refract(vec3 a, vec3 n, float ior, bool &tir) {
+	a = a.normal();
+	n = n.normal();
+
+	float cos_x = dot(a, -n);
+	// cos_x should always be positive
+	if (cos_x < 0.0f) {
+		cos_x *= -1.0f;
+		n *= -1.0f;
+	}
+
+	// total internal reflection, so return the reflected ray
+	if (1.0f - ior * ior * (1.0f - cos_x * cos_x) < 0.0f) {
+		tir = true;
+		return a - 2.0f * dot(a, n) * n;
+	}
+
+	vec3 r_a = ior * a + ior * cos_x * n;
+	vec3 r_b = -sqrt(1.0f - ior * ior * (1.0f - cos_x * cos_x)) * n;
+
+	tir = false;
+	return r_a + r_b;
+}
+
 std::ostream& operator << (std::ostream &out , const vec3& v) {
 	out << '[' << round(v.x * 10.0f) / 10.0f << ' ' << round(v.y * 10.0f) / 10.0f << ' ' << round(v.z * 10.0f) / 10.0f << ']';
 	return out;

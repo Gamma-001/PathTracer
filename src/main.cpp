@@ -5,110 +5,93 @@
 #include <numeric>
 #include <limits>
 #include <vector>
-#include <random>
 #include <cassert>
 
 #include "vec3.hpp"
 #include "ray.hpp"
 #include "sphere.hpp"
 #include "camera.hpp"
+#include "util.hpp"
+#include "material.hpp"
 
 #include "bmp_24.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "./external/stb_image.h"	// I might use my own implementation later
 
-constexpr float PI = 3.14159;
-
 std::vector <std::vector <vec3>> activeHDR;
-float hdrExposure = 1.0f;
+float hdrExposure = 2.0f;
+bool transparentBackground = true;
+
+// controls the rotation of hdri along horizontal axis
+float HDROffsetU = 0.6f;
 
 // returns the color of the skybox [0-1]
 vec3 SkyColor(const ray& r) {
 	if (activeHDR.size() == 0) return vec3(1.0f, 1.0f, 1.0f);
 
-	vec3 norm = 0.5f * (r.direction.normal() + vec3(1.0f, 1.0f, 1.0f));
-	int x = norm.x * (activeHDR[0].size() - 1);
-	int y = norm.y * (activeHDR.size() - 1);
+	size_t HDR_width = activeHDR[0].size();
+	size_t HDR_height = activeHDR.size();
+
+	vec3 norm = r.direction.normal();
+	int u = (HDR_width - 1) * (0.5f + atan2(norm.x, -norm.z) / (2.0f * PI));
+	int v = (HDR_height - 1) * (0.5f + asin(norm.y) / PI);
+
+	// add the offset
+	u = (u + int(HDROffsetU * HDR_width)) % HDR_width;
 
 	// assert(index < activeHDRHeight * activeHDRWidth * 3);
 	return vec3(
-		activeHDR[y][x].x * hdrExposure,
-		activeHDR[y][x].y * hdrExposure,
-		activeHDR[y][x].z * hdrExposure
+		activeHDR[v][u].x * hdrExposure,
+		activeHDR[v][u].y * hdrExposure,
+		activeHDR[v][u].z * hdrExposure
 	);
 }
 
-// returns a random floating point number between 0.0 and 1.0
-inline float RandFloat() {
-	static std::uniform_real_distribution <float> distribution(0.0f, 1.0f);
-	static std::mt19937 gen;
-	return distribution(gen);
+// this will be used for dielectrics
+// returns the Shlick's approximation of fresnel equations at an incident angle
+float Fresnel(vec3 a, vec3 n, float ior1, float ior2) {
+	float R0 = pow((ior1 - ior2) / (ior1 + ior2), 2.0f);
+	
+	float cos_x = vec3::dot(a, n);
+	// cos_x should always be positive
+	if (cos_x < 0.0f) {
+		cos_x = vec3::dot(a, -n);
+	}
+
+	float res = std::min(R0 + (1.0f - R0) * pow(1.0f - cos_x, 5.0f), 1.0f);
+
+	return res; 
 }
 
-// returns a random point a sphere
-vec3 RandSpherePos(int radius = 1.0f) {
-	float theta = RandFloat() * PI; 			// 0 < theta < 180
-	float phi = RandFloat() * PI * 2.0f; 		// 0 < phi < 360
+vec3 Trace(ray r, std::vector <Sphere> &spheres, vec3 rayColor = vec3(1.0f, 1.0f, 1.0f), float intensity = 1.0f, int depth = 0) {
+	if (depth > 16 || int(intensity * 255) == 0) return vec3(0.0f, 0.0f, 0.0f);
 
-	return vec3(
-		radius * cos(phi) * sin(theta),
-		radius * sin(phi) * sin(theta),
-		radius * cos(theta)
-	);
-}
-
-// recusive ray tracing function, could be made iterative
-vec3 LightBounce(ray r, std::vector <Sphere> &spheres, HitRecord hitRec, vec3 rayColor = vec3(1.0f, 1.0f, 1.0f), float roughness = 1.0f, float intensity = 1.0f, int depth = 0) {
-	if (depth > 16 || intensity < 0.004f) return rayColor;
-
-	// specifies the amount of the light the surface can reflect, right now its a constant
-	float reflectance = 0.75f;
-
-	// find a random point a unit sphere placed right above the collision point
-	vec3 spherePos = RandSpherePos(1.0f);
-	vec3 reflectedRay = -(r.position - hitRec.position) - 2.0f * vec3::dot(-(r.position - hitRec.position), hitRec.norm.normal()) * hitRec.norm.normal();
-	spherePos += hitRec.position + hitRec.norm.normal();
-
-	// caculate the new positions of both diffuse and specular ray
-	ray diffuseRay(hitRec.position, vec3(spherePos - hitRec.position).normal());
-	ray specularRay(hitRec.position, reflectedRay.normal());
-
-	// simply adding the two rays with a factor (roughness) and (1 - roughness) can yield a believable result
-	// the more the roughness, the more the ray inclines towards the random ray
-	ray newRay(hitRec.position, vec3(specularRay.direction * (1.0f - roughness) + diffuseRay.direction * (roughness)).normal());
-
-	// test if this new ray collides with any object (right now only spheres)
-	float hitAgain = false;
-	Sphere target;
-	HitRecord bestRec;
-	bestRec.t = std::numeric_limits<float>::max();
+	HitRecord hitRec;
+	float best_t = std::numeric_limits <float> :: max();
+	bool hit = false;
 
 	for (auto &x: spheres) {
 		HitRecord t_hrc;
-		if (x.hit(newRay, 0.001f, std::numeric_limits <float>::max(), t_hrc) && t_hrc.t < bestRec.t) {
-			hitAgain = true;
-			bestRec = t_hrc;
-			target = x;
+		if (x.hit(r, 0.001f, std::numeric_limits <float> :: max(), t_hrc) && t_hrc.t < best_t) {
+			hit = true;
+			hitRec = t_hrc;
+			best_t = t_hrc.t;
 		}
 	}
 
-	// in case a collision point was found, recusrively repeat the process
-	if (hitAgain) {
-		return intensity * LightBounce(
-			newRay, 
-			spheres, 
-			bestRec,
-			vec3::multiply(rayColor, reflectance * intensity * target.color),
-			target.roughness,
-			intensity * reflectance, 
-			depth + 1
-		);
+	if (hit) {
+		float attenuation; 
+		Material* mat = hitRec.object->material;
+
+		ray newRay = mat->scatter(r, hitRec.position, hitRec.norm, attenuation);
+		vec3 retColor = Trace(newRay, spheres, rayColor, intensity * attenuation, depth + 1);
+
+		return vec3::multiply(intensity * mat->baseColor, retColor);
 	}
 
-	// if no collisions could be found, return the skyColor multiplied by the ray intesnity
-	// clamp the light color vlaue to prevent fireflies
-	return vec3::multiply(intensity * SkyColor(newRay), rayColor).Clamp(0.0f, 1.0f);
+	if (depth == 0 && transparentBackground) return vec3(0.01f, 0.01f, 0.01f);
+	return SkyColor(r);
 }
 
 int main() {
@@ -117,16 +100,21 @@ int main() {
 	const uint16_t imageWidth = 1920;
 	const uint16_t imageHeight = imageWidth / aspectRatio;
 
-	Camera viewCam(vec3(0.0f, 0.0f, 2.0f), 2.0f, aspectRatio * 2.0f, 2.0f);
+	Diffuse diffRedMat(vec3(1.0f, 0.3f, 0.25f));
+	Diffuse diffMat(vec3(1.0f, 1.0f, 1.0f));
+
+	Glossy metalMat(vec3(1.0f, 1.0f, 1.0f), 0.05f);
+
+	Camera viewCam(vec3(0.0f, 0.0f, 3.0f), 2.0f, aspectRatio * 2.0f, 3.0f);
 
 	// list of objects placed int the scene
 	std::vector <Sphere> spheres;
 
-	spheres.push_back(Sphere(vec3(1.5f, 0.0f, -1.5f), 0.5f, vec3(0.2f, 0.8f, 0.01f), 0.0f));
-	spheres.push_back(Sphere(vec3(-1.5f, 0.0f, -1.5f), 0.5f, vec3(1.0f, 1.0f, 1.0f), 0.0f));
-	spheres.push_back(Sphere(vec3(0.0f, 0.0f, -1.0f), 0.5f, vec3(0.7f, 0.2f, 0.1f), 1.0f));
+	spheres.push_back(Sphere(vec3(1.5f, 0.0f, -1.5f), 0.5f, static_cast <Material*> (&diffMat)));
+	spheres.push_back(Sphere(vec3(-1.5f, 0.0f, -1.5f), 0.5f, static_cast <Material*> (&diffRedMat)));
+	spheres.push_back(Sphere(vec3(0.0f, 0.0f, -1.0f), 0.5f, static_cast <Material*> (&metalMat)));
 
-	spheres.push_back(Sphere(vec3(0.0f, -500.5f, -1.0f), 500.0f, vec3(0.5f, 0.5f, 0.5f), 0.5f));
+	spheres.push_back(Sphere(vec3(0.0f, -500.5f, -1.0f), 500.0f, static_cast <Material*> (&diffMat)));
 
 	// samples per pixel
 	int sampleCount = 64;
@@ -134,7 +122,7 @@ int main() {
 	// load the hdr and set it as active
 	int hdriWidth = 0, hdriHeight = 0, hdriChannels = 0;
 	stbi_set_flip_vertically_on_load(true);
-	float *hdriData = stbi_loadf("assets/hdri/pump_station_2k.hdr", &hdriWidth, &hdriHeight, &hdriChannels, 3);
+	float *hdriData = stbi_loadf("assets/hdri/christmas_photo_studio_02_4k.hdr", &hdriWidth, &hdriHeight, &hdriChannels, 3);
 
 	assert(hdriWidth != 0 && hdriHeight != 0);
 	
@@ -159,7 +147,7 @@ int main() {
 	for (int i = imageHeight - 1; i >= 0; i--) {
 		// progress indicator
 		int rem = 20 * (float(i)/imageHeight);
-		std::cerr << "\rProgress: | " << std::string(20 - rem, '#') << std::string(rem, ' ') << " |" << std::flush;
+		std::cout << "\rProgress: | " << std::string(20 - rem, '#') << std::string(rem, ' ') << " |" << std::flush;
 
 		for (int j = 0; j < imageWidth; j++) {
 			vec3 bgColor;
@@ -169,36 +157,9 @@ int main() {
 				float v = ((float)i + RandFloat()) / (imageHeight - 1);
 
 				ray r(viewCam.position, viewCam.llCorner + u * viewCam.horizontal + v * viewCam.vertical - viewCam.position);
-
-				// if the ray hit the sphere then color the pixel based on the sphere's normal at that position
+				r.direction = r.direction.normal();
 				
-				float bestT = std::numeric_limits <float> :: max();
-				bool hitObject = false;
-
-				HitRecord bestRec;
-				bestRec.t = std::numeric_limits<float>::max();
-
-				Sphere target;
-				for (auto &x: spheres) {
-					HitRecord t_hrc;
-					if (x.hit(r, 0.001f, std::numeric_limits <float>::max(), t_hrc)) {
-						if (t_hrc.t < bestRec.t) {
-							hitObject = true;
-							bestRec = t_hrc;
-							target = x;
-						}
-					}
-				}
-
-				if (hitObject) {
-					// shoot out N rays from the current hit location and average the color values
-					bgColor += LightBounce(r, spheres, bestRec, target.color, target.roughness);
-				}
-				// if the ray didn't hit the sphere color the pixed withe background
-				else {
-					// bgColor += SkyColor(r);
-					bgColor += vec3(0.01f, 0.01f, 0.01f);
-				}
+				bgColor += Trace(r, spheres).Clamp(0.0f, 1.0f);
 			}
 
 			// gamma correction

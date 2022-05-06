@@ -13,13 +13,9 @@ public:
 	vec3 center;
 	float radius;
 
-	Sphere() {}
-	Sphere(vec3 pos, float r, vec3 color = vec3(1.0f, 1.0f, 1.0f), float rough = 0.5f) {
-		center = pos;
-		radius = r;
-		roughness = rough;
-
-		this->color = color;
+	Sphere(vec3 position, float radius, Material* material) : MeshObject(material) {
+		this->center = position;
+		this->radius = radius;
 	}
 	
 	/* 

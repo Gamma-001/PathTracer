@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <numeric>
 #include <cmath>
 
 class vec3 {
@@ -42,6 +43,10 @@ public:
 	static vec3 cross(const vec3 &a, const vec3 &b);
 
 	static vec3 multiply(const vec3 &a, const vec3 &b);
+
+	static vec3 reflect(const vec3 &a, const vec3 &n);
+
+	static vec3 refract(vec3 a, vec3 n, float ior, bool &tir);
 
 	vec3 normal() const;
 	vec3 Clamp(float c_min = 0.0f, float c_max = 1.0f) const;

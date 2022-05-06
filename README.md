@@ -8,6 +8,8 @@ A very basic path tracer written in c++
 
 # Build Instructions
 ```
+cmake -S . -B ./build -G "MinGW Makefiles"
+
 cmake --build ./build
 
 ./build/RayTracing
@@ -17,7 +19,7 @@ cmake --build ./build
 [stb_image](https://github.com/nothings/stb/blob/master/stb_image.h)
 
 # Screenshots
-![](https://github.com/Gamma-001/PathTracer/blob/main/results/result%20(1).png)
+![](https://github.com/Gamma-001/PathTracer/blob/main/results/png_result.png)
 
 # Todo
 - Scene lights
