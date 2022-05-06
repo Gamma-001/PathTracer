@@ -22,6 +22,6 @@ cmake --build ./build
 ![](https://github.com/Gamma-001/PathTracer/blob/main/results/png_result.png)
 
 # Todo
+- Dielectrics
 - Scene lights
 - Mesh loading
-- Refractive materials
